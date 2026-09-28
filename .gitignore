@@ -47,3 +47,5 @@ Thumbs.db
 # Local runtime artifacts
 *.tmp
 *.local
+# Local backups
+backup_*/
