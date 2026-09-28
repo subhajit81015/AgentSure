@@ -1,0 +1,47 @@
+services:
+  agentsure:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+psycopg://agentsure:agentsure@postgres:5432/agentsure
+      QUEUE_MODE: inline
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
+      KAFKA_TOPIC: agentsure.evaluations
+      OTEL_SERVICE_NAME: agentsure-api
+    depends_on:
+      - postgres
+      - redpanda
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: agentsure
+      POSTGRES_PASSWORD: agentsure
+      POSTGRES_DB: agentsure
+    ports:
+      - "5432:5432"
+    volumes:
+      - agentsure_pgdata:/var/lib/postgresql/data
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v25.2.10
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp
+      - '1'
+      - --memory
+      - 1G
+      - --reserve-memory
+      - 0M
+      - --node-id
+      - '0'
+      - --check=false
+      - --kafka-addr
+      - PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr
+      - PLAINTEXT://localhost:9092
+    ports:
+      - "9092:9092"
+volumes:
+  agentsure_pgdata:
