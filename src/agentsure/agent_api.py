@@ -111,6 +111,7 @@ def _get_approval(
 
 def _check_pending_and_not_expired(
     approval: ApprovalRecord,
+    db: Session,
 ) -> None:
     now = datetime.now(timezone.utc)
 
@@ -132,6 +133,9 @@ def _check_pending_and_not_expired(
 
     if now >= expires_at:
         approval.status = "EXPIRED"
+
+        db.commit()
+        db.refresh(approval)
 
         raise HTTPException(
             status_code=409,
@@ -163,7 +167,10 @@ def approve_request(
         db,
     )
 
-    _check_pending_and_not_expired(approval)
+    _check_pending_and_not_expired(
+        approval,
+        db,
+    )
 
     now = datetime.now(timezone.utc)
 
@@ -212,7 +219,10 @@ def reject_request(
         db,
     )
 
-    _check_pending_and_not_expired(approval)
+    _check_pending_and_not_expired(
+        approval,
+        db,
+    )
 
     now = datetime.now(timezone.utc)
 

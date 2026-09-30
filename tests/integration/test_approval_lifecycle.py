@@ -1,8 +1,10 @@
+from datetime import datetime, timedelta, timezone
+
 from fastapi.testclient import TestClient
 
 from agentsure.main import app
 from agentsure.db import SessionLocal
-from agentsure.models import AuditEvent
+from agentsure.models import ApprovalRecord, AuditEvent
 
 
 client = TestClient(app)
@@ -169,3 +171,54 @@ def test_resolved_approval_cannot_be_approved_twice():
 
     assert second_response.status_code == 409
     assert "already resolved" in second_response.json()["detail"]
+
+
+def test_expired_approval_is_persisted():
+    body = create_pending_approval()
+
+    approval_id = body["approval"]["approval_id"]
+
+    db = SessionLocal()
+
+    try:
+        approval = db.get(
+            ApprovalRecord,
+            approval_id,
+        )
+
+        assert approval is not None
+
+        approval.expires_at = (
+            datetime.now(timezone.utc)
+            - timedelta(seconds=1)
+        )
+
+        db.commit()
+
+    finally:
+        db.close()
+
+    response = client.post(
+        f"/v1/approvals/{approval_id}/approve",
+        json={
+            "decided_by": "admin@example.com",
+            "reason": "Attempted after expiration.",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Approval has expired"
+
+    db = SessionLocal()
+
+    try:
+        approval = db.get(
+            ApprovalRecord,
+            approval_id,
+        )
+
+        assert approval is not None
+        assert approval.status == "EXPIRED"
+
+    finally:
+        db.close()
