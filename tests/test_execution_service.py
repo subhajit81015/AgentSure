@@ -131,7 +131,7 @@ def test_unregistered_action_is_blocked_by_policy():
             )
     finally:
         db.close()
-        
+
 def test_action_no_longer_requires_human_approval_is_blocked():
     approval = build_approved_approval()
 
@@ -200,5 +200,70 @@ def test_expired_approved_request_is_blocked():
                 db,
                 approval,
             )
+    finally:
+        db.close()
+        
+def test_execution_audit_contains_policy_and_execution_details():
+    db = SessionLocal()
+
+    try:
+        approval = build_approved_approval()
+
+        service = ApprovalExecutionService()
+
+        result = service.execute_approved(
+            db,
+            approval,
+        )
+
+        assert result["status"] == "SIMULATED_SUCCESS"
+
+        event = (
+            db.query(AuditEvent)
+            .filter(
+                AuditEvent.run_id == approval.run_id,
+                AuditEvent.event_type
+                == "approval.execution_completed",
+            )
+            .order_by(AuditEvent.id.desc())
+            .first()
+        )
+
+        assert event is not None
+
+        assert event.payload["approval_id"] == (
+            approval.approval_id
+        )
+        assert event.payload["agent_id"] == (
+            approval.agent_id
+        )
+        assert event.payload["incident_id"] == (
+            approval.incident_id
+        )
+        assert event.payload["approval_action"] == (
+            approval.action
+        )
+        assert event.payload["risk_level"] == (
+            approval.risk_level
+        )
+        assert event.payload["target"] == (
+            approval.target
+        )
+        assert event.payload["policy_version"] == (
+            approval.policy_version
+        )
+        assert event.payload["execution_mode"] == "SIMULATED"
+
+        assert event.payload["requested_actions"] == [
+            "reset_password",
+            "delete_old_credentials",
+        ]
+
+        assert len(event.payload["executions"]) == 2
+
+        for execution in event.payload["executions"]:
+            assert execution["status"] == "SIMULATED_SUCCESS"
+            assert execution["simulated"] is True
+
     finally:
         db.close()
