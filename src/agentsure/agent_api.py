@@ -4,8 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from .action_executor import ActionExecutionError
 from .agents.serviceops import ServiceOpsAgent
 from .db import SessionLocal
+from .execution_service import ApprovalExecutionService
 from .models import ApprovalRecord, AuditEvent
 
 
@@ -128,7 +130,7 @@ def _check_pending_and_not_expired(
 
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(
-            tzinfo=timezone.utc
+            tzinfo=timezone.utc,
         )
 
     if now >= expires_at:
@@ -258,3 +260,56 @@ def reject_request(
     db.refresh(approval)
 
     return _serialize_approval(approval)
+
+
+# ============================================================
+# Controlled Post-Approval Execution API
+# ============================================================
+
+@router.post("/approvals/{approval_id}/execute")
+def execute_approved_request(
+    approval_id: str,
+    db: Session = Depends(get_db),
+):
+    approval = _get_approval(
+        approval_id,
+        db,
+    )
+
+    if approval.status != "APPROVED":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Approval must be APPROVED before execution. "
+                f"Current status: {approval.status}"
+            ),
+        )
+
+    existing_execution = (
+        db.query(AuditEvent)
+        .filter(
+            AuditEvent.run_id == approval.run_id,
+            AuditEvent.event_type
+            == "approval.execution_completed",
+        )
+        .first()
+    )
+
+    if existing_execution:
+        raise HTTPException(
+            status_code=409,
+            detail="Approval has already been executed",
+        )
+
+    service = ApprovalExecutionService()
+
+    try:
+        return service.execute_approved(
+            db,
+            approval,
+        )
+    except ActionExecutionError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=str(exc),
+        ) from exc

@@ -222,3 +222,61 @@ def test_expired_approval_is_persisted():
 
     finally:
         db.close()
+
+
+def test_approved_request_can_be_executed_once():
+    body = create_pending_approval()
+
+    approval_id = body["approval"]["approval_id"]
+
+    approve_response = client.post(
+        f"/v1/approvals/{approval_id}/approve",
+        json={
+            "decided_by": "admin@example.com",
+            "reason": "Approved for controlled execution.",
+        },
+    )
+
+    assert approve_response.status_code == 200
+    assert approve_response.json()["status"] == "APPROVED"
+
+    execute_response = client.post(
+        f"/v1/approvals/{approval_id}/execute"
+    )
+
+    assert execute_response.status_code == 200
+
+    execution = execute_response.json()
+
+    assert execution["approval_id"] == approval_id
+    assert execution["status"] == "SIMULATED_SUCCESS"
+    assert execution["simulated"] is True
+
+    actions = {
+        item["action"]
+        for item in execution["actions"]
+    }
+
+    assert actions == {
+        "reset_password",
+        "delete_old_credentials",
+    }
+
+    for item in execution["actions"]:
+        assert item["status"] == "SIMULATED_SUCCESS"
+        assert item["simulated"] is True
+
+    assert (
+        "No external side effects occurred."
+        in execution["message"]
+    )
+
+    second_execute_response = client.post(
+        f"/v1/approvals/{approval_id}/execute"
+    )
+
+    assert second_execute_response.status_code == 409
+    assert (
+        second_execute_response.json()["detail"]
+        == "Approval has already been executed"
+    )
