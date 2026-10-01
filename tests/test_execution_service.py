@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -7,30 +8,38 @@ from agentsure.execution_service import ApprovalExecutionService
 from agentsure.models import AuditEvent
 
 
+def build_approved_approval():
+    return SimpleNamespace(
+        approval_id="TEST-APPROVAL-001",
+        run_id="TEST-RUN-001",
+        agent_id="serviceops-agent-v1",
+        incident_id="INC-10452",
+        action="high-impact-action",
+        risk_level="high",
+        target={
+            "type": "incident",
+            "id": "INC-10452",
+        },
+        normalized_parameters={
+            "requested_actions": [
+                "reset_password",
+                "delete_old_credentials",
+            ],
+        },
+        policy_version="serviceops-approval-v1",
+        status="APPROVED",
+        expires_at=(
+            datetime.now(timezone.utc)
+            + timedelta(minutes=5)
+        ),
+    )
+
+
 def test_approved_request_executes_as_simulation():
     db = SessionLocal()
 
     try:
-        approval = SimpleNamespace(
-            approval_id="TEST-APPROVAL-001",
-            run_id="TEST-RUN-001",
-            agent_id="serviceops-agent-v1",
-            incident_id="INC-10452",
-            action="high-impact-action",
-            risk_level="high",
-            target={
-                "type": "incident",
-                "id": "INC-10452",
-            },
-            normalized_parameters={
-                "requested_actions": [
-                    "reset_password",
-                    "delete_old_credentials",
-                ],
-            },
-            policy_version="serviceops-approval-v1",
-            status="APPROVED",
-        )
+        approval = build_approved_approval()
 
         service = ApprovalExecutionService()
 
@@ -78,34 +87,89 @@ def test_approved_request_executes_as_simulation():
 
 
 def test_unapproved_request_cannot_execute():
-    approval = SimpleNamespace(
-        approval_id="TEST-APPROVAL-002",
-        run_id="TEST-RUN-002",
-        agent_id="serviceops-agent-v1",
-        incident_id="INC-10452",
-        action="high-impact-action",
-        risk_level="high",
-        target={
-            "type": "incident",
-            "id": "INC-10452",
-        },
-        normalized_parameters={
-            "requested_actions": [
-                "reset_password",
-            ],
-        },
-        policy_version="serviceops-approval-v1",
-        status="PENDING_APPROVAL",
-    )
-
-    service = ApprovalExecutionService()
+    approval = build_approved_approval()
+    approval.status = "PENDING_APPROVAL"
 
     db = SessionLocal()
 
     try:
+        service = ApprovalExecutionService()
+
         with pytest.raises(
             ValueError,
             match="Only APPROVED",
+        ):
+            service.execute_approved(
+                db,
+                approval,
+            )
+    finally:
+        db.close()
+
+
+def test_unregistered_action_is_blocked_by_policy():
+    approval = build_approved_approval()
+
+    approval.normalized_parameters = {
+        "requested_actions": [
+            "unknown_sensitive_action",
+        ],
+    }
+
+    db = SessionLocal()
+
+    try:
+        service = ApprovalExecutionService()
+
+        with pytest.raises(
+            ValueError,
+            match="not registered by agent policy",
+        ):
+            service.execute_approved(
+                db,
+                approval,
+            )
+    finally:
+        db.close()
+
+
+def test_stale_policy_version_is_blocked():
+    approval = build_approved_approval()
+    approval.policy_version = "serviceops-approval-v0"
+
+    db = SessionLocal()
+
+    try:
+        service = ApprovalExecutionService()
+
+        with pytest.raises(
+            ValueError,
+            match="policy version is no longer current",
+        ):
+            service.execute_approved(
+                db,
+                approval,
+            )
+    finally:
+        db.close()
+
+
+def test_expired_approved_request_is_blocked():
+    approval = build_approved_approval()
+
+    approval.expires_at = (
+        datetime.now(timezone.utc)
+        - timedelta(seconds=1)
+    )
+
+    db = SessionLocal()
+
+    try:
+        service = ApprovalExecutionService()
+
+        with pytest.raises(
+            ValueError,
+            match="Approval has expired",
         ):
             service.execute_approved(
                 db,
