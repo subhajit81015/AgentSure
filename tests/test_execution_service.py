@@ -131,6 +131,31 @@ def test_unregistered_action_is_blocked_by_policy():
             )
     finally:
         db.close()
+        
+def test_action_no_longer_requires_human_approval_is_blocked():
+    approval = build_approved_approval()
+
+    approval.normalized_parameters = {
+        "requested_actions": [
+            "update_ticket",
+        ],
+    }
+
+    db = SessionLocal()
+
+    try:
+        service = ApprovalExecutionService()
+
+        with pytest.raises(
+            ValueError,
+            match="no longer classified as high-impact",
+        ):
+            service.execute_approved(
+                db,
+                approval,
+            )
+    finally:
+        db.close()
 
 
 def test_stale_policy_version_is_blocked():
