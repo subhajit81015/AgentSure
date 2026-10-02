@@ -191,3 +191,24 @@ class ApprovalExecutionService:
                 "No external side effects occurred."
             ),
         }
+
+    def get_execution(
+        self,
+        db: Session,
+        approval: ApprovalRecord,
+    ) -> ApprovalExecution:
+        execution = (
+            db.query(ApprovalExecution)
+            .filter(
+                ApprovalExecution.approval_id
+                == approval.approval_id,
+            )
+            .first()
+        )
+
+        if execution is None:
+            raise ActionExecutionError(
+                "Approval has not been executed"
+            )
+
+        return execution
