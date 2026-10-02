@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 
@@ -9,9 +10,12 @@ from agentsure.models import AuditEvent
 
 
 def build_approved_approval():
+    approval_id = f"TEST-APPROVAL-{uuid4()}"
+    run_id = f"TEST-RUN-{uuid4()}"
+
     return SimpleNamespace(
-        approval_id="TEST-APPROVAL-001",
-        run_id="TEST-RUN-001",
+        approval_id=approval_id,
+        run_id=run_id,
         agent_id="serviceops-agent-v1",
         incident_id="INC-10452",
         action="high-impact-action",
@@ -40,7 +44,6 @@ def test_approved_request_executes_as_simulation():
 
     try:
         approval = build_approved_approval()
-
         service = ApprovalExecutionService()
 
         result = service.execute_approved(
@@ -66,7 +69,7 @@ def test_approved_request_executes_as_simulation():
         event = (
             db.query(AuditEvent)
             .filter(
-                AuditEvent.run_id == "TEST-RUN-001",
+                AuditEvent.run_id == approval.run_id,
                 AuditEvent.event_type
                 == "approval.execution_completed",
             )
@@ -75,7 +78,7 @@ def test_approved_request_executes_as_simulation():
         )
 
         assert event is not None
-        assert event.payload["approval_id"] == "TEST-APPROVAL-001"
+        assert event.payload["approval_id"] == approval.approval_id
         assert event.payload["requested_actions"] == [
             "reset_password",
             "delete_old_credentials",
@@ -103,6 +106,7 @@ def test_unapproved_request_cannot_execute():
                 db,
                 approval,
             )
+
     finally:
         db.close()
 
@@ -129,8 +133,10 @@ def test_unregistered_action_is_blocked_by_policy():
                 db,
                 approval,
             )
+
     finally:
         db.close()
+
 
 def test_action_no_longer_requires_human_approval_is_blocked():
     approval = build_approved_approval()
@@ -154,6 +160,7 @@ def test_action_no_longer_requires_human_approval_is_blocked():
                 db,
                 approval,
             )
+
     finally:
         db.close()
 
@@ -175,6 +182,7 @@ def test_stale_policy_version_is_blocked():
                 db,
                 approval,
             )
+
     finally:
         db.close()
 
@@ -200,15 +208,16 @@ def test_expired_approved_request_is_blocked():
                 db,
                 approval,
             )
+
     finally:
         db.close()
-        
+
+
 def test_execution_audit_contains_policy_and_execution_details():
     db = SessionLocal()
 
     try:
         approval = build_approved_approval()
-
         service = ApprovalExecutionService()
 
         result = service.execute_approved(
@@ -234,24 +243,31 @@ def test_execution_audit_contains_policy_and_execution_details():
         assert event.payload["approval_id"] == (
             approval.approval_id
         )
+
         assert event.payload["agent_id"] == (
             approval.agent_id
         )
+
         assert event.payload["incident_id"] == (
             approval.incident_id
         )
+
         assert event.payload["approval_action"] == (
             approval.action
         )
+
         assert event.payload["risk_level"] == (
             approval.risk_level
         )
+
         assert event.payload["target"] == (
             approval.target
         )
+
         assert event.payload["policy_version"] == (
             approval.policy_version
         )
+
         assert event.payload["execution_mode"] == "SIMULATED"
 
         assert event.payload["requested_actions"] == [

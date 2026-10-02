@@ -1,13 +1,18 @@
 from datetime import datetime, timezone
 from typing import Any
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .action_executor import (
     ActionExecutionError,
     SimulatedActionExecutor,
 )
-from .models import ApprovalRecord, AuditEvent
+from .models import (
+    ApprovalExecution,
+    ApprovalRecord,
+    AuditEvent,
+)
 from .policies.tool_policy import (
     SERVICEOPS_APPROVAL_POLICY_VERSION,
     evaluate_tool,
@@ -97,6 +102,20 @@ class ApprovalExecutionService:
             requested_actions,
         )
 
+        existing_execution = (
+            db.query(ApprovalExecution)
+            .filter(
+                ApprovalExecution.approval_id
+                == approval.approval_id,
+            )
+            .first()
+        )
+
+        if existing_execution is not None:
+            raise ActionExecutionError(
+                "Approval has already been executed"
+            )
+
         executions = []
 
         for action in requested_actions:
@@ -118,26 +137,49 @@ class ApprovalExecutionService:
                 }
             )
 
-        db.add(
-            AuditEvent(
-                run_id=approval.run_id,
-                event_type="approval.execution_completed",
-                payload={
-                    "approval_id": approval.approval_id,
-                    "agent_id": approval.agent_id,
-                    "incident_id": approval.incident_id,
-                    "approval_action": approval.action,
-                    "requested_actions": requested_actions,
-                    "risk_level": approval.risk_level,
-                    "target": approval.target,
-                    "policy_version": approval.policy_version,
-                    "execution_mode": "SIMULATED",
-                    "executions": executions,
-                },
-            )
+        execution = ApprovalExecution(
+            approval_id=approval.approval_id,
+            run_id=approval.run_id,
+            status="SIMULATED_SUCCESS",
+            execution_mode="SIMULATED",
+            completed_at=datetime.now(timezone.utc),
+            result={
+                "actions": executions,
+                "message": (
+                    "All approved actions were simulated successfully. "
+                    "No external side effects occurred."
+                ),
+            },
         )
 
-        db.commit()
+        audit_event = AuditEvent(
+            run_id=approval.run_id,
+            event_type="approval.execution_completed",
+            payload={
+                "approval_id": approval.approval_id,
+                "agent_id": approval.agent_id,
+                "incident_id": approval.incident_id,
+                "approval_action": approval.action,
+                "requested_actions": requested_actions,
+                "risk_level": approval.risk_level,
+                "target": approval.target,
+                "policy_version": approval.policy_version,
+                "execution_mode": "SIMULATED",
+                "executions": executions,
+            },
+        )
+
+        db.add(execution)
+        db.add(audit_event)
+
+        try:
+            db.commit()
+        except IntegrityError as exc:
+            db.rollback()
+
+            raise ActionExecutionError(
+                "Approval has already been executed"
+            ) from exc
 
         return {
             "approval_id": approval.approval_id,
