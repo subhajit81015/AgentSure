@@ -313,3 +313,36 @@ def execute_approved_request(
             status_code=409,
             detail=str(exc),
         ) from exc
+@router.get("/approvals/{approval_id}/execution")
+def get_approval_execution(
+    approval_id: str,
+    db: Session = Depends(get_db),
+):
+    approval = _get_approval(
+        approval_id,
+        db,
+    )
+
+    service = ApprovalExecutionService()
+
+    try:
+        execution = service.get_execution(
+            db,
+            approval,
+        )
+    except ActionExecutionError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=str(exc),
+        ) from exc
+
+    return {
+        "execution_id": execution.execution_id,
+        "approval_id": execution.approval_id,
+        "run_id": execution.run_id,
+        "status": execution.status,
+        "execution_mode": execution.execution_mode,
+        "created_at": execution.created_at,
+        "completed_at": execution.completed_at,
+        "result": execution.result,
+    }
