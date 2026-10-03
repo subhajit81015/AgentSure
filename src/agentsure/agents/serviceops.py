@@ -5,6 +5,7 @@ from uuid import uuid4
 from ..authorization import authorize_action
 from ..knowledge.serviceops_kb import search_knowledge_base
 from ..models import ApprovalRecord, AuditEvent
+from ..observability import traced_agent_run
 from ..policies.tool_policy import evaluate_tool
 from ..schemas import EvaluationCase
 from ..security import detect_obvious_pii, detect_prompt_injection
@@ -35,6 +36,7 @@ class ServiceOpsAgent:
     model_version = "deterministic-local"
     prompt_version = "serviceops-v1"
 
+    @traced_agent_run
     def run(self, db, incident_id: str, user_message: str) -> dict:
         started = perf_counter()
         trace = []

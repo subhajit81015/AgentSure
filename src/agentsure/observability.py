@@ -1,4 +1,4 @@
-from collections.abc import Callable
+﻿from collections.abc import Callable
 from functools import wraps
 from typing import Any
 
@@ -61,33 +61,18 @@ def tracer():
 
 
 def traced_agent_run(func: Callable[..., Any]) -> Callable[..., Any]:
-    """Trace one complete agent execution."""
-
     @wraps(func)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
         current_tracer = tracer()
 
         with current_tracer.start_as_current_span(
-            "agentsure.agent.run"
+            f"agentsure.{func.__name__}"
         ) as span:
             span.set_attribute(
-                "agent.method",
-                func.__qualname__,
+                "agent.operation",
+                func.__name__,
             )
 
-            try:
-                result = func(*args, **kwargs)
-                span.set_attribute(
-                    "agent.status",
-                    "success",
-                )
-                return result
-            except Exception as exc:
-                span.set_attribute(
-                    "agent.status",
-                    "error",
-                )
-                span.record_exception(exc)
-                raise
+            return func(*args, **kwargs)
 
     return wrapper

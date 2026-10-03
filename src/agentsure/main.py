@@ -1,4 +1,4 @@
-﻿from fastapi import FastAPI
+from fastapi import FastAPI
 
 from .agent_api import router as agent_router
 from .api import router
@@ -9,9 +9,13 @@ from .observability import configure_otel
 
 def create_app() -> FastAPI:
     init_db()
+
     configure_otel(
-        settings.otel_service_name,
-        settings.otel_exporter_otlp_endpoint,
+        service_name=settings.otel_service_name,
+        otlp_endpoint=settings.otel_exporter_otlp_endpoint,
+        enable_exporter=bool(
+            settings.otel_exporter_otlp_endpoint
+        ),
     )
 
     app = FastAPI(
