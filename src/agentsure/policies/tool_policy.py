@@ -1,6 +1,5 @@
 ﻿from dataclasses import dataclass
 
-
 SERVICEOPS_APPROVAL_POLICY_VERSION = "serviceops-approval-v1"
 
 

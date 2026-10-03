@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -33,7 +33,7 @@ def build_approved_approval():
         policy_version="serviceops-approval-v1",
         status="APPROVED",
         expires_at=(
-            datetime.now(timezone.utc)
+            datetime.now(UTC)
             + timedelta(minutes=5)
         ),
     )
@@ -191,7 +191,7 @@ def test_expired_approved_request_is_blocked():
     approval = build_approved_approval()
 
     approval.expires_at = (
-        datetime.now(timezone.utc)
+        datetime.now(UTC)
         - timedelta(seconds=1)
     )
 

@@ -1,4 +1,4 @@
-﻿from datetime import datetime, timezone
+﻿from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -9,7 +9,6 @@ from .agents.serviceops import ServiceOpsAgent
 from .db import SessionLocal
 from .execution_service import ApprovalExecutionService
 from .models import ApprovalRecord, AuditEvent
-
 
 router = APIRouter(prefix="/v1")
 
@@ -115,7 +114,7 @@ def _check_pending_and_not_expired(
     approval: ApprovalRecord,
     db: Session,
 ) -> None:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     if approval.status != "PENDING_APPROVAL":
         raise HTTPException(
@@ -130,7 +129,7 @@ def _check_pending_and_not_expired(
 
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(
-            tzinfo=timezone.utc,
+            tzinfo=UTC,
         )
 
     if now >= expires_at:
@@ -174,7 +173,7 @@ def approve_request(
         db,
     )
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     approval.status = "APPROVED"
     approval.decided_at = now
@@ -226,7 +225,7 @@ def reject_request(
         db,
     )
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     approval.status = "REJECTED"
     approval.decided_at = now

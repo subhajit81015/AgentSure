@@ -1,11 +1,10 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
 
-from agentsure.main import app
 from agentsure.db import SessionLocal
+from agentsure.main import app
 from agentsure.models import ApprovalRecord, AuditEvent
-
 
 client = TestClient(app)
 
@@ -189,7 +188,7 @@ def test_expired_approval_is_persisted():
         assert approval is not None
 
         approval.expires_at = (
-            datetime.now(timezone.utc)
+            datetime.now(UTC)
             - timedelta(seconds=1)
         )
 

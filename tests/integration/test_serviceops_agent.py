@@ -2,7 +2,6 @@
 
 from agentsure.main import app
 
-
 client = TestClient(app)
 
 

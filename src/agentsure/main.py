@@ -1,6 +1,7 @@
 ﻿from fastapi import FastAPI
-from .api import router
+
 from .agent_api import router as agent_router
+from .api import router
 from .config import settings
 from .db import init_db
 from .observability import configure_otel

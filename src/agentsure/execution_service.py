@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy.exc import IntegrityError
@@ -45,10 +45,10 @@ class ApprovalExecutionService:
 
         if expires_at.tzinfo is None:
             expires_at = expires_at.replace(
-                tzinfo=timezone.utc,
+                tzinfo=UTC,
             )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         if now >= expires_at:
             raise ActionExecutionError(
@@ -142,7 +142,7 @@ class ApprovalExecutionService:
             run_id=approval.run_id,
             status="SIMULATED_SUCCESS",
             execution_mode="SIMULATED",
-            completed_at=datetime.now(timezone.utc),
+            completed_at=datetime.now(UTC),
             result={
                 "actions": executions,
                 "message": (

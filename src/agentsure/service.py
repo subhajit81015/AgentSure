@@ -1,7 +1,9 @@
 from uuid import uuid4
+
 from sqlalchemy.orm import Session
+
 from .evaluators import evaluate_case
-from .models import EvaluationResult, EvaluationRun, AuditEvent
+from .models import AuditEvent, EvaluationResult, EvaluationRun
 from .schemas import EvaluationRequest
 from .scoring import calculate_scores
 

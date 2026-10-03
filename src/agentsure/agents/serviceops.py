@@ -1,4 +1,4 @@
-﻿from datetime import datetime, timedelta, timezone
+﻿from datetime import UTC, datetime, timedelta
 from time import perf_counter
 from uuid import uuid4
 
@@ -167,7 +167,7 @@ class ServiceOpsAgent:
                     "delete_old_credentials"
                 )
 
-            requested_at = datetime.now(timezone.utc)
+            requested_at = datetime.now(UTC)
             expires_at = requested_at + timedelta(minutes=5)
 
             approval = request_human_approval(

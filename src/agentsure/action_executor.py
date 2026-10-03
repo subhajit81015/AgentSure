@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from typing import Any
 
-
 ALLOWED_SIMULATED_ACTIONS = frozenset(
     {
         "reset_password",
