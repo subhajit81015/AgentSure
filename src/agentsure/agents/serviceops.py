@@ -2,6 +2,7 @@
 from time import perf_counter
 from uuid import uuid4
 
+from ..authorization import authorize_action
 from ..knowledge.serviceops_kb import search_knowledge_base
 from ..models import ApprovalRecord, AuditEvent
 from ..policies.tool_policy import evaluate_tool
@@ -157,6 +158,17 @@ class ServiceOpsAgent:
         )
 
         if high_impact_requested:
+            authorization = authorize_action(
+                actor=ticket.requester,
+                action="high-impact-action",
+                risk_level="high",
+            )
+
+            if authorization.allowed:
+                raise RuntimeError(
+                    "High-impact action was unexpectedly authorized."
+                )
+
             requested_actions = []
 
             if password_reset_requested:
@@ -551,3 +563,4 @@ class ServiceOpsAgent:
                 2,
             ),
         }
+
