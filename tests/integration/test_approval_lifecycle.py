@@ -317,3 +317,125 @@ def test_execution_is_persisted_and_can_be_retrieved():
     assert lookup["status"] == "SIMULATED_SUCCESS"
     assert lookup["execution_mode"] == "SIMULATED"
     assert lookup["completed_at"] is not None
+    
+def test_rejected_request_cannot_be_executed():
+    body = create_pending_approval()
+
+    approval_id = body["approval"]["approval_id"]
+
+    reject_response = client.post(
+        f"/v1/approvals/{approval_id}/reject",
+        json={
+            "decided_by": "security@example.com",
+            "reason": "Rejected by security policy.",
+        },
+    )
+
+    assert reject_response.status_code == 200
+    assert reject_response.json()["status"] == "REJECTED"
+
+    execute_response = client.post(
+        f"/v1/approvals/{approval_id}/execute"
+    )
+
+    assert execute_response.status_code == 409
+    assert "must be APPROVED" in execute_response.json()["detail"]
+
+
+def test_execution_lookup_before_execution_returns_404():
+    body = create_pending_approval()
+
+    approval_id = body["approval"]["approval_id"]
+
+    response = client.get(
+        f"/v1/approvals/{approval_id}/execution"
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Approval has not been executed"
+
+
+def test_expired_approval_cannot_be_executed():
+    body = create_pending_approval()
+
+    approval_id = body["approval"]["approval_id"]
+
+    db = SessionLocal()
+
+    try:
+        approval = db.get(
+            ApprovalRecord,
+            approval_id,
+        )
+
+        assert approval is not None
+
+        approval.expires_at = (
+            datetime.now(UTC)
+            - timedelta(seconds=1)
+        )
+
+        db.commit()
+
+    finally:
+        db.close()
+
+    approve_response = client.post(
+        f"/v1/approvals/{approval_id}/approve",
+        json={
+            "decided_by": "admin@example.com",
+            "reason": "Attempted approval after expiry.",
+        },
+    )
+
+    assert approve_response.status_code == 409
+    assert approve_response.json()["detail"] == "Approval has expired"
+
+
+def test_execution_is_created_only_once():
+    body = create_pending_approval()
+
+    approval_id = body["approval"]["approval_id"]
+    run_id = body["run_id"]
+
+    approve_response = client.post(
+        f"/v1/approvals/{approval_id}/approve",
+        json={
+            "decided_by": "admin@example.com",
+            "reason": "Approved for controlled execution.",
+        },
+    )
+
+    assert approve_response.status_code == 200
+
+    first_execution = client.post(
+        f"/v1/approvals/{approval_id}/execute"
+    )
+
+    assert first_execution.status_code == 200
+
+    first_execution_id = first_execution.json()["execution_id"]
+
+    second_execution = client.post(
+        f"/v1/approvals/{approval_id}/execute"
+    )
+
+    assert second_execution.status_code == 409
+
+    db = SessionLocal()
+
+    try:
+        executions = (
+            db.query(ApprovalExecution)
+            .filter(
+                ApprovalExecution.approval_id == approval_id,
+                ApprovalExecution.run_id == run_id,
+            )
+            .all()
+        )
+
+        assert len(executions) == 1
+        assert executions[0].execution_id == first_execution_id
+
+    finally:
+        db.close()
