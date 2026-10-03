@@ -439,3 +439,16 @@ def test_execution_is_created_only_once():
 
     finally:
         db.close()
+
+def test_high_impact_approval_persists_authorization_decision():
+    body = create_pending_approval()
+
+    approval = body["approval"]
+
+    assert approval["authorization"]["allowed"] is False
+    assert approval["authorization"]["reason"] == (
+        "High-impact actions require explicit human approval."
+    )
+    assert approval["authorization"]["actor"] == "employee-2048"
+    assert approval["authorization"]["action"] == "high-impact-action"
+    assert approval["authorization"]["risk_level"] == "high"
