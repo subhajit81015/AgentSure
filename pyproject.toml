@@ -37,7 +37,9 @@ where = ["src"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-extend-ignore = ["B008"]
 
+[tool.ruff.lint]
+extend-ignore = ["B008"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
+
