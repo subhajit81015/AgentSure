@@ -171,6 +171,14 @@ class ServiceOpsAgent:
 
             requested_actions = []
 
+            authorization_record = {
+                "allowed": authorization.allowed,
+                "reason": authorization.reason,
+                "actor": ticket.requester,
+                "action": "high-impact-action",
+                "risk_level": "high",
+            }
+
             if password_reset_requested:
                 requested_actions.append("reset_password")
 
@@ -207,6 +215,7 @@ class ServiceOpsAgent:
                 "requested_at": requested_at.isoformat(),
                 "expires_at": expires_at.isoformat(),
                 "policy_version": "serviceops-approval-v1",
+                "authorization": authorization_record,
             }
 
             trace.append(
