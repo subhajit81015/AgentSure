@@ -19,8 +19,7 @@ def create_pending_approval():
         json={
             "incident_id": "INC-10452",
             "user_message": (
-                "Please reset my password immediately "
-                "and delete the old credentials."
+                "Please reset my password immediately and delete the old credentials."
             ),
         },
     )
@@ -41,9 +40,7 @@ def test_get_pending_approval():
 
     approval_id = body["approval"]["approval_id"]
 
-    response = client.get(
-        f"/v1/approvals/{approval_id}"
-    )
+    response = client.get(f"/v1/approvals/{approval_id}")
 
     assert response.status_code == 200
 
@@ -74,10 +71,7 @@ def test_approve_request_and_audit_event():
 
     assert approval["status"] == "APPROVED"
     assert approval["decided_by"] == "admin@example.com"
-    assert (
-        approval["decision_reason"]
-        == "Verified user identity and approved."
-    )
+    assert approval["decision_reason"] == "Verified user identity and approved."
     assert approval["decided_at"] is not None
 
     db = SessionLocal()
@@ -121,10 +115,7 @@ def test_reject_request_and_audit_event():
 
     assert approval["status"] == "REJECTED"
     assert approval["decided_by"] == "security@example.com"
-    assert (
-        approval["decision_reason"]
-        == "Request rejected by security policy."
-    )
+    assert approval["decision_reason"] == "Request rejected by security policy."
     assert approval["decided_at"] is not None
 
     db = SessionLocal()
@@ -191,10 +182,7 @@ def test_expired_approval_is_persisted():
 
         assert approval is not None
 
-        approval.expires_at = (
-            datetime.now(UTC)
-            - timedelta(seconds=1)
-        )
+        approval.expires_at = datetime.now(UTC) - timedelta(seconds=1)
 
         db.commit()
 
@@ -243,9 +231,7 @@ def test_approved_request_can_be_executed_once():
     assert approve_response.status_code == 200
     assert approve_response.json()["status"] == "APPROVED"
 
-    execute_response = client.post(
-        f"/v1/approvals/{approval_id}/execute"
-    )
+    execute_response = client.post(f"/v1/approvals/{approval_id}/execute")
 
     assert execute_response.status_code == 200
 
@@ -255,10 +241,7 @@ def test_approved_request_can_be_executed_once():
     assert execution["status"] == "SIMULATED_SUCCESS"
     assert execution["simulated"] is True
 
-    actions = {
-        item["action"]
-        for item in execution["actions"]
-    }
+    actions = {item["action"] for item in execution["actions"]}
 
     assert actions == {
         "reset_password",
@@ -269,20 +252,14 @@ def test_approved_request_can_be_executed_once():
         assert item["status"] == "SIMULATED_SUCCESS"
         assert item["simulated"] is True
 
-    assert (
-        "No external side effects occurred."
-        in execution["message"]
-    )
+    assert "No external side effects occurred." in execution["message"]
 
-    second_execute_response = client.post(
-        f"/v1/approvals/{approval_id}/execute"
-    )
+    second_execute_response = client.post(f"/v1/approvals/{approval_id}/execute")
 
     assert second_execute_response.status_code == 409
-    assert (
-        second_execute_response.json()["detail"]
-        == "Approval has already been executed"
-    )
+    assert second_execute_response.json()["detail"] == "Approval has already been executed"
+
+
 def test_execution_is_persisted_and_can_be_retrieved():
     body = create_pending_approval()
 
@@ -299,9 +276,7 @@ def test_execution_is_persisted_and_can_be_retrieved():
 
     assert approve_response.status_code == 200
 
-    execute_response = client.post(
-        f"/v1/approvals/{approval_id}/execute"
-    )
+    execute_response = client.post(f"/v1/approvals/{approval_id}/execute")
 
     assert execute_response.status_code == 200
 
@@ -330,9 +305,7 @@ def test_execution_is_persisted_and_can_be_retrieved():
     finally:
         db.close()
 
-    lookup_response = client.get(
-        f"/v1/approvals/{approval_id}/execution"
-    )
+    lookup_response = client.get(f"/v1/approvals/{approval_id}/execution")
 
     assert lookup_response.status_code == 200
 

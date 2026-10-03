@@ -29,17 +29,10 @@ class ApprovalExecutionService:
         requested_actions: list[str],
     ) -> None:
         if approval.status != "APPROVED":
-            raise ActionExecutionError(
-                "Only APPROVED requests can be executed."
-            )
+            raise ActionExecutionError("Only APPROVED requests can be executed.")
 
-        if (
-            approval.policy_version
-            != SERVICEOPS_APPROVAL_POLICY_VERSION
-        ):
-            raise ActionExecutionError(
-                "Approval policy version is no longer current."
-            )
+        if approval.policy_version != SERVICEOPS_APPROVAL_POLICY_VERSION:
+            raise ActionExecutionError("Approval policy version is no longer current.")
 
         expires_at = approval.expires_at
 
@@ -51,28 +44,20 @@ class ApprovalExecutionService:
         now = datetime.now(UTC)
 
         if now >= expires_at:
-            raise ActionExecutionError(
-                "Approval has expired and cannot be executed."
-            )
+            raise ActionExecutionError("Approval has expired and cannot be executed.")
 
         for action in requested_actions:
             if not isinstance(action, str):
-                raise ActionExecutionError(
-                    "Each approved action must be a string."
-                )
+                raise ActionExecutionError("Each approved action must be a string.")
 
             policy = evaluate_tool(action)
 
             if not policy.allowed:
-                raise ActionExecutionError(
-                    f"Action is not registered by agent policy: "
-                    f"{action}"
-                )
+                raise ActionExecutionError(f"Action is not registered by agent policy: {action}")
 
             if not policy.requires_human_approval:
                 raise ActionExecutionError(
-                    f"Action is no longer classified as "
-                    f"high-impact requiring approval: {action}"
+                    f"Action is no longer classified as high-impact requiring approval: {action}"
                 )
 
     def execute_approved(
@@ -88,14 +73,10 @@ class ApprovalExecutionService:
         )
 
         if not isinstance(requested_actions, list):
-            raise ActionExecutionError(
-                "Approved requested_actions must be a list."
-            )
+            raise ActionExecutionError("Approved requested_actions must be a list.")
 
         if not requested_actions:
-            raise ActionExecutionError(
-                "No approved concrete actions were provided."
-            )
+            raise ActionExecutionError("No approved concrete actions were provided.")
 
         self._validate_approval(
             approval,
@@ -105,16 +86,13 @@ class ApprovalExecutionService:
         existing_execution = (
             db.query(ApprovalExecution)
             .filter(
-                ApprovalExecution.approval_id
-                == approval.approval_id,
+                ApprovalExecution.approval_id == approval.approval_id,
             )
             .first()
         )
 
         if existing_execution is not None:
-            raise ActionExecutionError(
-                "Approval has already been executed"
-            )
+            raise ActionExecutionError("Approval has already been executed")
 
         executions = []
 
@@ -177,23 +155,21 @@ class ApprovalExecutionService:
         except IntegrityError as exc:
             db.rollback()
 
-            raise ActionExecutionError(
-                "Approval has already been executed"
-            ) from exc
+            raise ActionExecutionError("Approval has already been executed") from exc
 
         return {
-                "execution_id": execution.execution_id,
-                "approval_id": execution.approval_id,
-                "run_id": execution.run_id,
-                "status": execution.status,
-                "execution_mode": execution.execution_mode,
-                "simulated": True,
-                "actions": executions,
-                "message": (
-                    "All approved actions were simulated successfully. "
-                    "No external side effects occurred."
-                ),
-            }
+            "execution_id": execution.execution_id,
+            "approval_id": execution.approval_id,
+            "run_id": execution.run_id,
+            "status": execution.status,
+            "execution_mode": execution.execution_mode,
+            "simulated": True,
+            "actions": executions,
+            "message": (
+                "All approved actions were simulated successfully. "
+                "No external side effects occurred."
+            ),
+        }
 
     def get_execution(
         self,
@@ -203,15 +179,12 @@ class ApprovalExecutionService:
         execution = (
             db.query(ApprovalExecution)
             .filter(
-                ApprovalExecution.approval_id
-                == approval.approval_id,
+                ApprovalExecution.approval_id == approval.approval_id,
             )
             .first()
         )
 
         if execution is None:
-            raise ActionExecutionError(
-                "Approval has not been executed"
-            )
+            raise ActionExecutionError("Approval has not been executed")
 
         return execution
