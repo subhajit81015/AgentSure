@@ -4,7 +4,11 @@ from fastapi.testclient import TestClient
 
 from agentsure.db import SessionLocal
 from agentsure.main import app
-from agentsure.models import ApprovalRecord, AuditEvent
+from agentsure.models import (
+    ApprovalExecution,
+    ApprovalRecord,
+    AuditEvent,
+)
 
 client = TestClient(app)
 
@@ -279,3 +283,64 @@ def test_approved_request_can_be_executed_once():
         second_execute_response.json()["detail"]
         == "Approval has already been executed"
     )
+def test_execution_is_persisted_and_can_be_retrieved():
+    body = create_pending_approval()
+
+    approval_id = body["approval"]["approval_id"]
+    run_id = body["run_id"]
+
+    approve_response = client.post(
+        f"/v1/approvals/{approval_id}/approve",
+        json={
+            "decided_by": "admin@example.com",
+            "reason": "Approved for controlled execution.",
+        },
+    )
+
+    assert approve_response.status_code == 200
+
+    execute_response = client.post(
+        f"/v1/approvals/{approval_id}/execute"
+    )
+
+    assert execute_response.status_code == 200
+
+    execution_response = execute_response.json()
+
+    assert execution_response["status"] == "SIMULATED_SUCCESS"
+
+    execution_id = execution_response["execution_id"]
+
+    db = SessionLocal()
+
+    try:
+        execution = db.get(
+            ApprovalExecution,
+            execution_id,
+        )
+
+        assert execution is not None
+        assert execution.approval_id == approval_id
+        assert execution.run_id == run_id
+        assert execution.status == "SIMULATED_SUCCESS"
+        assert execution.execution_mode == "SIMULATED"
+        assert execution.completed_at is not None
+        assert execution.result is not None
+
+    finally:
+        db.close()
+
+    lookup_response = client.get(
+        f"/v1/approvals/{approval_id}/execution"
+    )
+
+    assert lookup_response.status_code == 200
+
+    lookup = lookup_response.json()
+
+    assert lookup["execution_id"] == execution_id
+    assert lookup["approval_id"] == approval_id
+    assert lookup["run_id"] == run_id
+    assert lookup["status"] == "SIMULATED_SUCCESS"
+    assert lookup["execution_mode"] == "SIMULATED"
+    assert lookup["completed_at"] is not None

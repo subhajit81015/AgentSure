@@ -182,15 +182,18 @@ class ApprovalExecutionService:
             ) from exc
 
         return {
-            "approval_id": approval.approval_id,
-            "status": "SIMULATED_SUCCESS",
-            "simulated": True,
-            "actions": executions,
-            "message": (
-                "All approved actions were simulated successfully. "
-                "No external side effects occurred."
-            ),
-        }
+                "execution_id": execution.execution_id,
+                "approval_id": execution.approval_id,
+                "run_id": execution.run_id,
+                "status": execution.status,
+                "execution_mode": execution.execution_mode,
+                "simulated": True,
+                "actions": executions,
+                "message": (
+                    "All approved actions were simulated successfully. "
+                    "No external side effects occurred."
+                ),
+            }
 
     def get_execution(
         self,
