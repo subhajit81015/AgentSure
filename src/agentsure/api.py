@@ -2,7 +2,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from .db import SessionLocal
-from .models import AuditEvent, EvaluationRun
+from .models import (
+    ApprovalExecution,
+    ApprovalRecord,
+    AuditEvent,
+    EvaluationRun,
+)
 from .schemas import EvaluationRequest, EvaluationResponse
 from .service import run_evaluation
 
@@ -91,6 +96,8 @@ def get_audit_events(
             for event in events
         ],
     }
+
+
 @router.get("/runs/{run_id}/assurance")
 def get_run_assurance(
     run_id: str,
@@ -110,8 +117,6 @@ def get_run_assurance(
         .order_by(AuditEvent.created_at.asc())
         .all()
     )
-
-    from .models import ApprovalExecution, ApprovalRecord
 
     approval = (
         db.query(ApprovalRecord)
