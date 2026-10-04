@@ -8,6 +8,7 @@ from .models import (
     AuditEvent,
     EvaluationRun,
 )
+from .policy import evaluate_risk
 from .schemas import EvaluationRequest, EvaluationResponse
 from .service import run_evaluation
 
@@ -192,4 +193,109 @@ def get_run_assurance(
                 for event in audit_events
             ],
         },
+    }
+
+
+@router.get("/runs/{run_id}/summary")
+def get_run_summary(
+    run_id: str,
+    db: Session = Depends(get_db),
+):
+    run = db.get(EvaluationRun, run_id)
+
+    if not run:
+        raise HTTPException(
+            status_code=404,
+            detail="Evaluation run not found",
+        )
+
+    approval = (
+        db.query(ApprovalRecord)
+        .filter(ApprovalRecord.run_id == run_id)
+        .order_by(ApprovalRecord.requested_at.desc())
+        .first()
+    )
+
+    execution = None
+
+    if approval:
+        execution = (
+            db.query(ApprovalExecution)
+            .filter(
+                ApprovalExecution.approval_id
+                == approval.approval_id
+            )
+            .first()
+        )
+
+    approval_required = approval is not None
+
+    risk = evaluate_risk(
+        critical_failure_count=run.critical_failure_count or 0,
+        approval_required=approval_required,
+        approval_risk_level=(
+            approval.risk_level
+            if approval
+            else None
+        ),
+        arai_score=run.arai_score,
+    )
+
+    approval_score = (
+        run.summary.get("approval_score")
+        if run.summary
+        else None
+    )
+
+    return {
+        "run_id": run.id,
+        "agent": {
+            "id": run.agent_id,
+        },
+        "decision": {
+            "release": risk.release_decision,
+            "reason": risk.reason,
+            "confidence": run.arai_score,
+        },
+        "scores": {
+            "arai": run.arai_score,
+            "quality": run.quality_score,
+            "safety": run.safety_score,
+            "reliability": run.reliability_score,
+            "operations": run.operations_score,
+            "approval": approval_score,
+        },
+        "risk": {
+            "level": risk.level,
+            "critical_failures": run.critical_failure_count or 0,
+            "human_approval_required": risk.human_approval_required,
+        },
+        "approval": (
+            {
+                "status": approval.status,
+                "approved_by": approval.decided_by,
+                "approval_id": approval.approval_id,
+                "risk_level": approval.risk_level,
+            }
+            if approval
+            else {
+                "status": "NOT_REQUIRED",
+                "approved_by": None,
+                "approval_id": None,
+                "risk_level": None,
+            }
+        ),
+        "execution": (
+            {
+                "status": execution.status,
+                "mode": execution.execution_mode,
+                "execution_id": execution.execution_id,
+            }
+            if execution
+            else {
+                "status": "NOT_EXECUTED",
+                "mode": None,
+                "execution_id": None,
+            }
+        ),
     }
