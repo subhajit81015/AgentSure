@@ -12,6 +12,7 @@ from .policy import evaluate_risk
 from .schemas import EvaluationRequest, EvaluationResponse
 from .service import run_evaluation
 
+
 router = APIRouter(prefix="/v1")
 
 
@@ -23,7 +24,11 @@ def get_db():
         db.close()
 
 
-@router.post("/evaluations", response_model=EvaluationResponse, status_code=201)
+@router.post(
+    "/evaluations",
+    response_model=EvaluationResponse,
+    status_code=201,
+)
 def create_evaluation(
     request: EvaluationRequest,
     db: Session = Depends(get_db),
@@ -201,6 +206,14 @@ def get_run_summary(
     run_id: str,
     db: Session = Depends(get_db),
 ):
+    """
+    Return the consolidated assurance summary for an evaluation run.
+
+    The evaluation service is the source of truth for the persisted
+    release decision. Approval state is evaluated here only to expose
+    the current assurance/risk state.
+    """
+
     run = db.get(EvaluationRun, run_id)
 
     if not run:
@@ -228,10 +241,12 @@ def get_run_summary(
             .first()
         )
 
+    critical_failures = run.critical_failure_count or 0
+
     approval_required = approval is not None
 
     risk = evaluate_risk(
-        critical_failure_count=run.critical_failure_count or 0,
+        critical_failure_count=critical_failures,
         approval_required=approval_required,
         approval_risk_level=(
             approval.risk_level
@@ -247,16 +262,48 @@ def get_run_summary(
         else None
     )
 
+    # ---------------------------------------------------------
+    # Decision handling
+    #
+    # run.release_decision is the persisted result produced by
+    # the evaluation service.
+    #
+    # If an approval record exists, the current risk assessment
+    # can explain the human-approval requirement, but we should
+    # not silently rewrite the persisted evaluation decision.
+    # ---------------------------------------------------------
+
+    release_decision = run.release_decision
+
+    if critical_failures > 0:
+        decision_reason = (
+            "Critical evaluation failures block release."
+        )
+    elif approval_required:
+        decision_reason = (
+            "High-impact action requires human approval "
+            "before execution."
+        )
+    elif release_decision == "GO":
+        decision_reason = (
+            "Evaluation passed without blocking conditions."
+        )
+    else:
+        decision_reason = risk.reason
+
     return {
         "run_id": run.id,
+
         "agent": {
             "id": run.agent_id,
         },
+
         "decision": {
-            "release": risk.release_decision,
-            "reason": risk.reason,
+            "release": release_decision,
+            "reason": decision_reason,
             "confidence": run.arai_score,
         },
+
         "scores": {
             "arai": run.arai_score,
             "quality": run.quality_score,
@@ -265,11 +312,15 @@ def get_run_summary(
             "operations": run.operations_score,
             "approval": approval_score,
         },
+
         "risk": {
             "level": risk.level,
-            "critical_failures": run.critical_failure_count or 0,
-            "human_approval_required": risk.human_approval_required,
+            "critical_failures": critical_failures,
+            "human_approval_required": (
+                risk.human_approval_required
+            ),
         },
+
         "approval": (
             {
                 "status": approval.status,
@@ -285,6 +336,7 @@ def get_run_summary(
                 "risk_level": None,
             }
         ),
+
         "execution": (
             {
                 "status": execution.status,
