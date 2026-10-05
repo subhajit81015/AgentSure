@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from .action_executor import ActionExecutionError
 from .agents.serviceops import ServiceOpsAgent
+from .authentication import authenticate_actor
 from .db import SessionLocal
 from .execution_service import ApprovalExecutionService
 from .models import ApprovalRecord, AuditEvent
@@ -34,6 +35,7 @@ class ServiceOpsRequest(BaseModel):
         min_length=1,
         max_length=128,
     )
+
     user_message: str = Field(
         min_length=1,
         max_length=10000,
@@ -63,6 +65,7 @@ class ApprovalDecisionRequest(BaseModel):
         min_length=1,
         max_length=128,
     )
+
     reason: str | None = Field(
         default=None,
         max_length=1000,
@@ -110,6 +113,27 @@ def _get_approval(
     return approval
 
 
+def _authenticate_decision_actor(
+    decided_by: str,
+) -> str:
+    """
+    Authenticate the human actor responsible for
+    approving or rejecting an approval request.
+    """
+
+    result = authenticate_actor(decided_by)
+
+    if not result.authenticated:
+        raise HTTPException(
+            status_code=401,
+            detail=result.reason,
+        )
+
+    # authenticate_actor normalizes whitespace.
+    # Use the authenticated canonical actor everywhere downstream.
+    return result.actor
+
+
 def _check_pending_and_not_expired(
     approval: ApprovalRecord,
     db: Session,
@@ -120,7 +144,7 @@ def _check_pending_and_not_expired(
         raise HTTPException(
             status_code=409,
             detail=(
-                f"Approval is already resolved: "
+                "Approval is already resolved: "
                 f"{approval.status}"
             ),
         )
@@ -131,6 +155,8 @@ def _check_pending_and_not_expired(
         expires_at = expires_at.replace(
             tzinfo=UTC,
         )
+    else:
+        expires_at = expires_at.astimezone(UTC)
 
     if now >= expires_at:
         approval.status = "EXPIRED"
@@ -144,6 +170,10 @@ def _check_pending_and_not_expired(
         )
 
 
+# ============================================================
+# Get Approval
+# ============================================================
+
 @router.get("/approvals/{approval_id}")
 def get_approval(
     approval_id: str,
@@ -156,6 +186,10 @@ def get_approval(
 
     return _serialize_approval(approval)
 
+
+# ============================================================
+# Approve
+# ============================================================
 
 @router.post("/approvals/{approval_id}/approve")
 def approve_request(
@@ -173,11 +207,19 @@ def approve_request(
         db,
     )
 
+    # --------------------------------------------------------
+    # Authentication boundary
+    # --------------------------------------------------------
+
+    authenticated_actor = _authenticate_decision_actor(
+        request.decided_by,
+    )
+
     now = datetime.now(UTC)
 
     approval.status = "APPROVED"
     approval.decided_at = now
-    approval.decided_by = request.decided_by
+    approval.decided_by = authenticated_actor
     approval.decision_reason = request.reason
 
     db.add(
@@ -190,7 +232,7 @@ def approve_request(
                 "incident_id": approval.incident_id,
                 "action": approval.action,
                 "risk_level": approval.risk_level,
-                "decided_by": request.decided_by,
+                "decided_by": authenticated_actor,
                 "reason": request.reason,
                 "target": approval.target,
                 "normalized_parameters": (
@@ -199,6 +241,10 @@ def approve_request(
                 "policy_version": (
                     approval.policy_version
                 ),
+                "authentication": {
+                    "authenticated": True,
+                    "actor": authenticated_actor,
+                },
             },
         )
     )
@@ -208,6 +254,10 @@ def approve_request(
 
     return _serialize_approval(approval)
 
+
+# ============================================================
+# Reject
+# ============================================================
 
 @router.post("/approvals/{approval_id}/reject")
 def reject_request(
@@ -225,11 +275,19 @@ def reject_request(
         db,
     )
 
+    # --------------------------------------------------------
+    # Authentication boundary
+    # --------------------------------------------------------
+
+    authenticated_actor = _authenticate_decision_actor(
+        request.decided_by,
+    )
+
     now = datetime.now(UTC)
 
     approval.status = "REJECTED"
     approval.decided_at = now
-    approval.decided_by = request.decided_by
+    approval.decided_by = authenticated_actor
     approval.decision_reason = request.reason
 
     db.add(
@@ -242,7 +300,7 @@ def reject_request(
                 "incident_id": approval.incident_id,
                 "action": approval.action,
                 "risk_level": approval.risk_level,
-                "decided_by": request.decided_by,
+                "decided_by": authenticated_actor,
                 "reason": request.reason,
                 "target": approval.target,
                 "normalized_parameters": (
@@ -251,6 +309,10 @@ def reject_request(
                 "policy_version": (
                     approval.policy_version
                 ),
+                "authentication": {
+                    "authenticated": True,
+                    "actor": authenticated_actor,
+                },
             },
         )
     )
@@ -307,11 +369,18 @@ def execute_approved_request(
             db,
             approval,
         )
+
     except ActionExecutionError as exc:
         raise HTTPException(
             status_code=409,
             detail=str(exc),
         ) from exc
+
+
+# ============================================================
+# Execution Lookup
+# ============================================================
+
 @router.get("/approvals/{approval_id}/execution")
 def get_approval_execution(
     approval_id: str,
@@ -329,6 +398,7 @@ def get_approval_execution(
             db,
             approval,
         )
+
     except ActionExecutionError as exc:
         raise HTTPException(
             status_code=404,
