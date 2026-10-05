@@ -11,6 +11,7 @@ from .db import SessionLocal
 from .execution_service import ApprovalExecutionService
 from .models import ApprovalRecord, AuditEvent
 
+
 router = APIRouter(prefix="/v1")
 
 
@@ -20,6 +21,7 @@ router = APIRouter(prefix="/v1")
 
 def get_db():
     db = SessionLocal()
+
     try:
         yield db
     finally:
@@ -72,6 +74,10 @@ class ApprovalDecisionRequest(BaseModel):
     )
 
 
+# ============================================================
+# Approval serialization
+# ============================================================
+
 def _serialize_approval(
     approval: ApprovalRecord,
 ) -> dict:
@@ -95,6 +101,10 @@ def _serialize_approval(
     }
 
 
+# ============================================================
+# Approval lookup
+# ============================================================
+
 def _get_approval(
     approval_id: str,
     db: Session,
@@ -113,12 +123,20 @@ def _get_approval(
     return approval
 
 
+# ============================================================
+# Authentication
+# ============================================================
+
 def _authenticate_decision_actor(
     decided_by: str,
 ) -> str:
     """
     Authenticate the human actor responsible for
     approving or rejecting an approval request.
+
+    This is intentionally kept independent from RBAC.
+    RBAC can be integrated later without changing
+    the existing API contract.
     """
 
     result = authenticate_actor(decided_by)
@@ -129,16 +147,28 @@ def _authenticate_decision_actor(
             detail=result.reason,
         )
 
-    # authenticate_actor normalizes whitespace.
-    # Use the authenticated canonical actor everywhere downstream.
+    if not result.actor:
+        raise HTTPException(
+            status_code=401,
+            detail="Actor authentication failed.",
+        )
+
     return result.actor
 
+
+# ============================================================
+# Approval state validation
+# ============================================================
 
 def _check_pending_and_not_expired(
     approval: ApprovalRecord,
     db: Session,
 ) -> None:
     now = datetime.now(UTC)
+
+    # --------------------------------------------------------
+    # Already resolved
+    # --------------------------------------------------------
 
     if approval.status != "PENDING_APPROVAL":
         raise HTTPException(
@@ -148,6 +178,10 @@ def _check_pending_and_not_expired(
                 f"{approval.status}"
             ),
         )
+
+    # --------------------------------------------------------
+    # Expiration
+    # --------------------------------------------------------
 
     expires_at = approval.expires_at
 
@@ -188,7 +222,7 @@ def get_approval(
 
 
 # ============================================================
-# Approve
+# Approve Approval
 # ============================================================
 
 @router.post("/approvals/{approval_id}/approve")
@@ -208,7 +242,7 @@ def approve_request(
     )
 
     # --------------------------------------------------------
-    # Authentication boundary
+    # Authenticate decision actor
     # --------------------------------------------------------
 
     authenticated_actor = _authenticate_decision_actor(
@@ -217,10 +251,18 @@ def approve_request(
 
     now = datetime.now(UTC)
 
+    # --------------------------------------------------------
+    # Update approval
+    # --------------------------------------------------------
+
     approval.status = "APPROVED"
     approval.decided_at = now
     approval.decided_by = authenticated_actor
     approval.decision_reason = request.reason
+
+    # --------------------------------------------------------
+    # Audit event
+    # --------------------------------------------------------
 
     db.add(
         AuditEvent(
@@ -256,7 +298,7 @@ def approve_request(
 
 
 # ============================================================
-# Reject
+# Reject Approval
 # ============================================================
 
 @router.post("/approvals/{approval_id}/reject")
@@ -276,7 +318,7 @@ def reject_request(
     )
 
     # --------------------------------------------------------
-    # Authentication boundary
+    # Authenticate decision actor
     # --------------------------------------------------------
 
     authenticated_actor = _authenticate_decision_actor(
@@ -285,10 +327,18 @@ def reject_request(
 
     now = datetime.now(UTC)
 
+    # --------------------------------------------------------
+    # Update approval
+    # --------------------------------------------------------
+
     approval.status = "REJECTED"
     approval.decided_at = now
     approval.decided_by = authenticated_actor
     approval.decision_reason = request.reason
+
+    # --------------------------------------------------------
+    # Audit event
+    # --------------------------------------------------------
 
     db.add(
         AuditEvent(
@@ -337,6 +387,10 @@ def execute_approved_request(
         db,
     )
 
+    # --------------------------------------------------------
+    # Approval must already be approved
+    # --------------------------------------------------------
+
     if approval.status != "APPROVED":
         raise HTTPException(
             status_code=409,
@@ -345,6 +399,10 @@ def execute_approved_request(
                 f"Current status: {approval.status}"
             ),
         )
+
+    # --------------------------------------------------------
+    # Prevent duplicate execution
+    # --------------------------------------------------------
 
     existing_execution = (
         db.query(AuditEvent)
@@ -362,6 +420,10 @@ def execute_approved_request(
             detail="Approval has already been executed",
         )
 
+    # --------------------------------------------------------
+    # Execute approved action
+    # --------------------------------------------------------
+
     service = ApprovalExecutionService()
 
     try:
@@ -378,7 +440,7 @@ def execute_approved_request(
 
 
 # ============================================================
-# Execution Lookup
+# Get Approval Execution
 # ============================================================
 
 @router.get("/approvals/{approval_id}/execution")
