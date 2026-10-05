@@ -10,6 +10,7 @@ from .authentication import authenticate_actor
 from .db import SessionLocal
 from .execution_service import ApprovalExecutionService
 from .models import ApprovalRecord, AuditEvent
+from .rbac import authorize
 
 
 router = APIRouter(prefix="/v1")
@@ -133,10 +134,6 @@ def _authenticate_decision_actor(
     """
     Authenticate the human actor responsible for
     approving or rejecting an approval request.
-
-    This is intentionally kept independent from RBAC.
-    RBAC can be integrated later without changing
-    the existing API contract.
     """
 
     result = authenticate_actor(decided_by)
@@ -154,6 +151,40 @@ def _authenticate_decision_actor(
         )
 
     return result.actor
+
+
+# ============================================================
+# RBAC permission enforcement
+# ============================================================
+
+def _require_permission(
+    actor: str,
+    role: str,
+    permission: str,
+) -> None:
+    """
+    Authenticate the requesting actor and verify that
+    the actor's role contains the required permission.
+    """
+
+    authentication = authenticate_actor(actor)
+
+    if not authentication.authenticated:
+        raise HTTPException(
+            status_code=401,
+            detail=authentication.reason,
+        )
+
+    decision = authorize(
+        role,
+        permission,
+    )
+
+    if not decision.allowed:
+        raise HTTPException(
+            status_code=403,
+            detail=decision.reason,
+        )
 
 
 # ============================================================
@@ -217,6 +248,7 @@ def get_approval(
         approval_id,
         db,
     )
+
 
     return _serialize_approval(approval)
 
@@ -431,7 +463,6 @@ def execute_approved_request(
             db,
             approval,
         )
-
     except ActionExecutionError as exc:
         raise HTTPException(
             status_code=409,
@@ -460,7 +491,6 @@ def get_approval_execution(
             db,
             approval,
         )
-
     except ActionExecutionError as exc:
         raise HTTPException(
             status_code=404,
